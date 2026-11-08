@@ -18,7 +18,7 @@ VeriText fixes the trust gap: business texts show up like a verified social acco
 | The problem | What VeriText does |
 |---|---|
 | Any sender name or number can be spoofed | Checks the sender against a registry of **approved businesses** |
-| Scam texts look identical to real ones | Shows a **✓ badge** for verified senders and a **⚠ warning** for look-alikes |
+| Scam texts look identical to real ones | Shows a **✓ badge** for verified senders and blocks look-alikes |
 | Nobody sees how big the problem is | A **live red counter** shows how many scams and strangers were caught |
 
 ---
