@@ -116,6 +116,16 @@ private fun CustomerHome(deepLink: String?, onConsumed: () -> Unit, onSettings: 
         if (granted) vm.refresh()
     }
 
+    // Ask once for Contacts so saved numbers always come through.
+    val contactsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.refresh() }
+    LaunchedEffect(granted) {
+        val prefs = Prefs(ctx)
+        if (granted && !Contacts.hasPermission(ctx) && prefs.string("contactsAsked") == null) {
+            prefs.putString("contactsAsked", "1")
+            contactsLauncher.launch(Manifest.permission.READ_CONTACTS)
+        }
+    }
+
     LaunchedEffect(deepLink) { if (deepLink != null) { openThread = deepLink; onConsumed() } }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         granted = SmsRepo.hasReadPermission(ctx)

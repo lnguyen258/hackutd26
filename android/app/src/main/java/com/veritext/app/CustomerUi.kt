@@ -61,6 +61,7 @@ data class Conversation(
     val ownerName: String?,
     val color: Int?,
     val domain: String?,
+    val contactName: String? = null, // set when the sender is saved in the user's Contacts
     val messages: List<Msg>, // newest first
 ) {
     val latest get() = messages.first()
@@ -106,13 +107,26 @@ class InboxViewModel(app: Application) : AndroidViewModel(app) {
     private fun build(inbox: List<Sms>, results: Map<Long, VerifyResult?>): List<Conversation> =
         inbox.groupBy { Tokens.normalize(it.address) }.values.map { msgs ->
             val addr = msgs.first().address
-            val ms = msgs.map { Msg(it, results[it.id]) }
+            // Saved contacts always come through: never show a scam warning for them.
+            val contact = Contacts.nameFor(ctx, addr)
+            val ms = msgs.map { m ->
+                val r = results[m.id]
+                Msg(m, if (contact != null && r?.decision == Decision.SUSPICIOUS) VerifyResult(Decision.UNKNOWN, "saved_contact") else r)
+            }
+            // Strangers and flagged messages count toward the counter (only ones newer than when counting began).
+            if (contact == null) ms.forEach { m ->
+                val d = m.result?.decision
+                if (d != null && d != Decision.VERIFIED && (d == Decision.SUSPICIOUS || Contacts.hasPermission(ctx))) {
+                    Blocked.record(ctx, m.sms.address, m.sms.body, m.sms.date)
+                }
+            }
             val verifiedOrg = ms.firstNotNullOfOrNull { it.result?.takeIf { r -> r.decision == Decision.VERIFIED } }
             val dir = Verifier.ownerOf(ctx, addr)
             val name = verifiedOrg?.orgName ?: dir?.takeIf { it.status == "approved" }?.name
             Conversation(
                 address = addr,
-                title = name ?: addr,
+                title = contact ?: name ?: addr,
+                contactName = contact,
                 ownerName = name,
                 color = verifiedOrg?.color,
                 domain = verifiedOrg?.domain,
@@ -137,7 +151,13 @@ fun InboxScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Messages", fontWeight = FontWeight.Bold, fontSize = 26.sp) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Messages", fontWeight = FontWeight.Bold, fontSize = 26.sp)
+                        val caught by Blocked.count(LocalContext.current).collectAsState()
+                        ScamCounter(caught)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 actions = {
                     TextButton(onClick = { vm.refresh() }) { Text(if (loading) "Checking…" else "Refresh") }
@@ -219,6 +239,7 @@ fun ThreadScreen(vm: InboxViewModel, address: String, onBack: () -> Unit) {
                         val sub = when {
                             c?.domain != null -> "${c.domain} · Verified business"
                             c?.ownerName != null -> "Verified business · ${c.address}"
+                            c?.contactName != null -> "Saved contact · ${c.address}"
                             else -> c?.address ?: address
                         }
                         Text(sub, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

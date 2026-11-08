@@ -111,7 +111,13 @@ class SmsReceiver : BroadcastReceiver() {
                 // Make sure we know about businesses approved moments ago.
                 Verifier.refreshDirectory(ctx)
                 val r = Verifier.verify(ctx, from, body)
-                if (r != null && r.decision != Decision.UNKNOWN) Notifier.show(ctx, from, body, r)
+                // Saved contacts come through untouched: no scam alert for them.
+                val saved = Contacts.nameFor(ctx, from) != null
+                // Live counter +1: flagged scams, plus strangers (not a saved contact, not a verified business).
+                val caught = r != null && r.decision != Decision.VERIFIED && !saved &&
+                    (r.decision == Decision.SUSPICIOUS || Contacts.hasPermission(ctx))
+                if (caught) Blocked.record(ctx, from, body)
+                if (r != null && r.decision != Decision.UNKNOWN && !(saved && r.decision == Decision.SUSPICIOUS)) Notifier.show(ctx, from, body, r)
                 Bus.tick.tryEmit(Unit)
             } finally {
                 pending.finish()

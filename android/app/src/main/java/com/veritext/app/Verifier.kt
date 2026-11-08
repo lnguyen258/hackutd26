@@ -20,6 +20,8 @@ object Verifier {
     private fun sha(s: String) =
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 
+    fun keyFor(from: String, body: String) = cacheKey(from, body)
+
     private fun cacheKey(from: String, body: String) = "c_" + sha(from + "|" + body)
 
     // ---- registry directory (public list of verified sender numbers) ----
