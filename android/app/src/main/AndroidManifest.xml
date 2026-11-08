@@ -37,5 +37,16 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+
+        <!-- Optional: lets the scam counter see RCS/chat-app texts (sender name only, never the text). -->
+        <service
+            android:name=".MessageListener"
+            android:exported="true"
+            android:label="VeriText scam counter"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

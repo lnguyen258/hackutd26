@@ -25,3 +25,23 @@ object Contacts {
         }
     }
 }
+
+/** Senders the user marked "Not a scam". Stored on the phone only. */
+object Allowlist {
+    private fun sp(ctx: Context) = ctx.applicationContext.getSharedPreferences("veritext_allow", Context.MODE_PRIVATE)
+
+    fun has(ctx: Context, address: String): Boolean =
+        sp(ctx).getStringSet("numbers", emptySet())!!.contains(Tokens.normalize(address))
+
+    fun add(ctx: Context, address: String) {
+        val s = HashSet(sp(ctx).getStringSet("numbers", emptySet())!!)
+        s.add(Tokens.normalize(address))
+        sp(ctx).edit().putStringSet("numbers", s).apply()
+    }
+}
+
+/** One rule for "trust this sender without checking": a saved contact or an allowed number. */
+object Trust {
+    fun isTrusted(ctx: Context, address: String): Boolean =
+        Contacts.nameFor(ctx, address) != null || Allowlist.has(ctx, address)
+}

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
  * (sender|text) to avoid double counting. Message text itself is never kept here.
  */
 object Blocked {
+    private const val BURST_MS = 15_000L
     private var state: MutableStateFlow<Int>? = null
 
     private fun sp(ctx: Context) = ctx.applicationContext.getSharedPreferences("veritext_blocked", Context.MODE_PRIVATE)
@@ -33,9 +34,12 @@ object Blocked {
     @Synchronized
     fun record(ctx: Context, from: String, body: String, date: Long = System.currentTimeMillis()): Boolean {
         if (date < since(ctx)) return false
+        // The same text can be seen twice (SMS receiver + its notification): one burst per sender counts once.
+        val burstKey = "last_" + Tokens.normalize(from)
+        if (kotlin.math.abs(date - sp(ctx).getLong(burstKey, 0L)) < BURST_MS) return false
         val keys = HashSet(sp(ctx).getStringSet("keys", emptySet())!!)
         if (!keys.add(Verifier.keyFor(from, body))) return false
-        sp(ctx).edit().putStringSet("keys", keys).apply()
+        sp(ctx).edit().putStringSet("keys", keys).putLong(burstKey, date).apply()
         (count(ctx) as MutableStateFlow<Int>).value = keys.size
         return true
     }

@@ -112,7 +112,7 @@ class SmsReceiver : BroadcastReceiver() {
                 Verifier.refreshDirectory(ctx)
                 val r = Verifier.verify(ctx, from, body)
                 // Saved contacts come through untouched: no scam alert for them.
-                val saved = Contacts.nameFor(ctx, from) != null
+                val saved = Trust.isTrusted(ctx, from)
                 // Live counter +1: flagged scams, plus strangers (not a saved contact, not a verified business).
                 val caught = r != null && r.decision != Decision.VERIFIED && !saved &&
                     (r.decision == Decision.SUSPICIOUS || Contacts.hasPermission(ctx))

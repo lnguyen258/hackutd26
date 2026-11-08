@@ -110,6 +110,7 @@ private fun CustomerHome(deepLink: String?, onConsumed: () -> Unit, onSettings: 
     val vm: InboxViewModel = viewModel()
     var granted by remember { mutableStateOf(SmsRepo.hasReadPermission(ctx)) }
     var openThread by remember { mutableStateOf<String?>(null) }
+    var showBlocked by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
         granted = res[Manifest.permission.READ_SMS] == true || SmsRepo.hasReadPermission(ctx)
@@ -145,8 +146,11 @@ private fun CustomerHome(deepLink: String?, onConsumed: () -> Unit, onSettings: 
     if (t != null) {
         BackHandler { openThread = null }
         ThreadScreen(vm, t, onBack = { openThread = null })
+    } else if (showBlocked) {
+        BackHandler { showBlocked = false }
+        BlockedScreen(vm, onOpen = { openThread = it }, onBack = { showBlocked = false })
     } else {
-        InboxScreen(vm, onOpen = { openThread = it }, onSettings = onSettings, onSwitchRole = onSwitchRole)
+        InboxScreen(vm, onOpen = { openThread = it }, onOpenBlocked = { showBlocked = true }, onSettings = onSettings, onSwitchRole = onSwitchRole)
     }
 }
 
