@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VeriText Registry</title>
+<style>
+  :root {
+    --bg:#faf7f9; --card:#fff; --ink:#15181c; --mute:#667085; --line:#e4e6ea;
+    --ok:#0a66c2; --bad:#c0392b; --unk:#9aa3af; --good:#157f3b; --warn:#b45309; --brand:#e20074;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1114; --card:#181b20; --ink:#eef0f3; --mute:#9aa3af; --line:#2a2f37;
+      --ok:#5aa9f5; --bad:#f2766b; --unk:#5b6572; --good:#4ade80; --warn:#fbbf24; --brand:#ff4da6; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 20px; background:#e20074; color:#fff; position:sticky; top:0; z-index:2; box-shadow:0 2px 10px rgba(226,0,116,.25); }
+  header button { background:rgba(255,255,255,.14); color:#fff; border-color:rgba(255,255,255,.5); }
+  header .engine { color:#fff; border-color:rgba(255,255,255,.55); }
+  header h1 { font-size:17px; margin:0; display:flex; align-items:center; gap:8px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#fff; box-shadow:0 0 0 0 #fff; animation:pulse 2s infinite; }
+  @keyframes pulse { 70% { box-shadow:0 0 0 8px transparent; } 100% { box-shadow:0 0 0 0 transparent; } }
+  @media (prefers-reduced-motion: reduce) { .dot { animation:none; } }
+  .sp { flex:1; }
+  .engine { font-size:12px; color:var(--mute); border:1px solid var(--line); padding:2px 10px; border-radius:999px; }
+  main { max-width:1280px; margin:0 auto; padding:18px 20px 40px; display:grid; gap:16px; grid-template-columns:repeat(12,1fr); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .card h2 { margin:0; padding:12px 16px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  .tiles { grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .tile { border-top:3px solid var(--brand); }
+  .tile .n { font-size:30px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.1; }
+  .tile .l { color:var(--mute); font-size:12px; margin-top:2px; }
+  .c-ok { color:var(--ok); } .c-bad { color:var(--bad); } .c-unk { color:var(--mute); } .c-warn { color:var(--warn); }
+  .traffic { grid-column:span 8; } .reasons { grid-column:span 4; }
+  .orgs { grid-column:span 7; } .feed { grid-column:span 5; }
+  @media (max-width:980px) { .traffic,.reasons,.orgs,.feed { grid-column:1/-1; } }
+  .pad { padding:14px 16px; }
+  svg { display:block; width:100%; height:auto; }
+  .legend { display:flex; gap:14px; font-size:12px; color:var(--mute); padding:0 16px 12px; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+  .rrow { display:grid; grid-template-columns:1fr auto; gap:4px 10px; padding:8px 16px; font-size:13px; }
+  .rbar { grid-column:1/-1; height:6px; background:var(--line); border-radius:3px; overflow:hidden; }
+  .rbar b { display:block; height:100%; background:var(--bad); }
+  .org { display:grid; grid-template-columns:40px 1fr auto; gap:12px; align-items:center; padding:12px 16px; border-top:1px solid var(--line); }
+  .logo { width:40px; height:40px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; }
+  .name { font-weight:600; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .meta { color:var(--mute); font-size:12.5px; word-break:break-word; }
+  .chk { width:15px; height:15px; border-radius:50%; background:var(--ok); color:#fff; display:inline-grid; place-items:center; font-size:10px; font-weight:800; }
+  .pill { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; padding:1px 8px; border-radius:999px; border:1px solid currentColor; }
+  .pill.approved { color:var(--good); } .pill.pending { color:var(--warn); } .pill.rejected,.pill.revoked { color:var(--bad); }
+  button,.btn { font:inherit; font-size:13px; padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--brand); border-color:var(--brand); color:#fff; }
+  button.danger { color:var(--bad); border-color:var(--bad); }
+  button:focus-visible,input:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+  .acts { display:flex; gap:6px; }
+  form.add { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; padding:12px 16px; border-top:1px solid var(--line); background:color-mix(in srgb, var(--brand) 5%, transparent); }
+  input { font:inherit; padding:7px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); min-width:0; }
+  .ev { display:grid; grid-template-columns:58px 1fr; gap:8px; padding:8px 16px; border-top:1px solid var(--line); font-size:13px; }
+  .t { color:var(--mute); font-variant-numeric:tabular-nums; }
+  .tag { font-weight:700; font-size:11.5px; letter-spacing:.03em; }
+  .feedbox { max-height:520px; overflow:auto; }
+  .empty { padding:24px 16px; text-align:center; color:var(--mute); }
+  #gate { position:fixed; inset:0; background:var(--bg); display:none; place-items:center; z-index:5; }
+  #gate .box { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:26px; width:min(380px,92vw); display:grid; gap:12px; }
+  #gate h2 { margin:0; font-size:20px; color:var(--brand); }
+  .err { color:var(--bad); font-size:13px; min-height:18px; }
+</style>
+</head>
+<body>
+<div id="gate"><form class="box" onsubmit="return login(event)">
+  <h2>VeriText Registry</h2>
+  <div class="meta">Enter the admin key to review businesses and see live traffic.</div>
+  <input id="key" type="password" placeholder="Admin key" autocomplete="current-password" required>
+  <div class="err" id="gerr"></div>
+  <button class="primary" type="submit">Open dashboard</button>
+</form></div>
+
+<header>
+  <h1><span class="dot" title="live"></span> VeriText <span style="font-weight:400;opacity:.85">Registry</span></h1>
+  <span class="engine" id="engine">…</span>
+  <span class="sp"></span>
+  <button class="danger" onclick="resetDemo()">Reset demo data</button>
+</header>
+
+<main>
+  <div class="tiles" id="tiles"></div>
+
+  <section class="card traffic">
+    <h2>Verification traffic <span>last 30 min</span></h2>
+    <div class="pad" id="chart"></div>
+    <div class="legend"><span><i style="background:var(--ok)"></i>Verified</span><span><i style="background:var(--bad)"></i>Suspicious</span><span><i style="background:var(--unk)"></i>Unknown</span></div>
+  </section>
+
+  <section class="card reasons">
+    <h2>Why messages were flagged</h2>
+    <div id="reasons"><div class="empty">No flagged messages yet.</div></div>
+  </section>
+
+  <section class="card orgs">
+    <h2>Businesses</h2>
+    <div id="orgs"></div>
+    <form class="add" onsubmit="return addApproved(event)">
+      <input id="a_name" placeholder="Business name" value="T-Mobile" required>
+      <input id="a_domain" placeholder="Domain" value="t-mobile.com" required>
+      <input id="a_num" placeholder="Phone number to verify" required>
+      <button class="primary" type="submit">Verify this number</button>
+    </form>
+  </section>
+
+  <section class="card feed">
+    <h2>Live activity</h2>
+    <div class="feedbox" id="events"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let KEY = ''; try { KEY = sessionStorage.getItem('vtkey') || ''; } catch {}
+const REASONS = {
+  no_token:'Registered number, no code (spoof)', body_mismatch:'Real code, altered message',
+  unknown_token:'Unrecognised code', token_expired:'Code expired', token_from_other_org:'Code from another business',
+  sender_not_registered:'Real code from unregistered number', org_revoked:'Business was revoked',
+  ok:'Valid code', sender_match:'Registered sender number', not_in_registry:'Not a registered sender'
+};
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { ...(opts.headers||{}), 'x-admin-key': KEY, 'content-type': 'application/json' } });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 403) { showGate(); throw new Error('locked'); }
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function showGate(msg) { $('gate').style.display = 'grid'; $('gerr').textContent = msg || ''; $('key').focus(); }
+async function login(e) {
+  e.preventDefault(); KEY = $('key').value.trim();
+  try { await fetch('/api/admin/check', { headers: { 'x-admin-key': KEY } }).then(async (r) => { if (!r.ok) throw 0; });
+    try { sessionStorage.setItem('vtkey', KEY); } catch {}
+    $('gate').style.display = 'none'; refresh();
+  } catch { $('gerr').textContent = 'Wrong admin key'; }
+  return false;
+}
+
+async function act(id, action) { try { await api(`/api/admin/orgs/${id}/${action}`, { method:'POST' }); } catch (e) { if (e.message !== 'locked') alert(e.message); } refresh(); }
+async function addApproved(e) {
+  e.preventDefault();
+  try { await api('/api/admin/orgs/create-approved', { method:'POST', body: JSON.stringify({ name:$('a_name').value, domain:$('a_domain').value, number:$('a_num').value, color:'#E20074' }) }); $('a_num').value=''; }
+  catch (e2) { if (e2.message !== 'locked') alert(e2.message); }
+  refresh(); return false;
+}
+async function resetDemo() { if (confirm('Delete all businesses, codes and activity?')) { await api('/api/admin/reset', { method:'POST' }); refresh(); } }
+Object.assign(window, { act, addApproved, resetDemo, login });
+
+function tiles(s) {
+  const t = s.totals, o = s.orgs;
+  const items = [
+    ['Verified messages', t.verified, 'c-ok'], ['Flagged as suspicious', t.suspicious, 'c-bad'], ['Unrelated (ignored)', t.unknown, 'c-unk'],
+    ['Codes issued', t.issued, ''], ['Verified businesses', o.approved || 0, ''], ['Awaiting review', o.pending || 0, (o.pending ? 'c-warn' : '')]
+  ];
+  $('tiles').innerHTML = items.map(([l, n, c]) => `<div class="tile"><div class="n ${c}">${n}</div><div class="l">${l}${l.includes('Verified messages')||l.includes('Flagged')||l.includes('Unrelated')?' · 24h':''}</div></div>`).join('');
+}
+
+function chart(series) {
+  const W = 760, H = 210, L = 28, B = 22, T = 8, n = series.length;
+  const max = Math.max(4, ...series.map((b) => b.verified + b.suspicious + b.unknown));
+  const bw = (W - L) / n, ph = H - B - T;
+  let g = '';
+  for (let i = 0; i <= 2; i++) {
+    const v = Math.round(max * i / 2), y = T + ph - ph * (v / max);
+    g += `<line x1="${L}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${L-6}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--mute)">${v}</text>`;
+  }
+  series.forEach((b, i) => {
+    let y = T + ph; const x = L + i * bw + 1.5, w = Math.max(2, bw - 3);
+    for (const [k, c] of [['verified','var(--ok)'], ['suspicious','var(--bad)'], ['unknown','var(--unk)']]) {
+      const h = ph * (b[k] / max); if (!h) continue; y -= h;
+      g += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.5" fill="${c}"><title>${new Date(b.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} · ${k}: ${b[k]}</title></rect>`;
+    }
+    if (i % 6 === 0 || i === n - 1) g += `<text x="${x + w/2}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mute)">${new Date(b.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</text>`;
+  });
+  $('chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Verification results per minute, last 30 minutes">${g}</svg>`;
+}
+
+function reasons(r) {
+  const e = Object.entries(r).sort((a, b) => b[1] - a[1]);
+  if (!e.length) { $('reasons').innerHTML = '<div class="empty">No flagged messages yet.</div>'; return; }
+  const total = e.reduce((s, [, n]) => s + n, 0);
+  $('reasons').innerHTML = e.map(([k, n]) => `<div class="rrow"><span>${esc(REASONS[k] || k)}</span><b>${n}</b><div class="rbar"><b style="width:${100*n/total}%"></b></div></div>`).join('');
+}
+
+function orgs(list) {
+  const rows = list.map((o) => {
+    const a = o.status === 'pending' ? `<button class="primary" onclick="act(${o.id},'approve')">Approve</button><button class="danger" onclick="act(${o.id},'reject')">Reject</button>`
+      : o.status === 'approved' ? `<button class="danger" onclick="act(${o.id},'revoke')">Revoke</button>` : `<button onclick="act(${o.id},'approve')">Re-approve</button>`;
+    return `<div class="org"><div class="logo" style="background:${esc(o.color)}">${esc(o.name[0]?.toUpperCase())}</div>
+      <div><div class="name">${esc(o.name)} ${o.status==='approved'?'<span class="chk">✓</span>':''} <span class="pill ${o.status}">${o.status}</span></div>
+      <div class="meta">${esc(o.domain)} · ${esc(o.senders.join(', '))}</div></div><div class="acts">${a}</div></div>`;
+  }).join('');
+  $('orgs').innerHTML = rows || '<div class="empty">No applications yet. Apply from the app in Business mode, or verify a number below.</div>';
+}
+
+function events(list) {
+  $('events').innerHTML = list.map((e) => {
+    const t = new Date(e.at).toLocaleTimeString([], { hour12:false });
+    let cls = 'c-unk', tag = e.kind.toUpperCase(), text = esc(e.detail || '');
+    if (e.kind === 'verify') {
+      tag = e.decision.toUpperCase(); cls = e.decision === 'verified' ? 'c-ok' : e.decision === 'suspicious' ? 'c-bad' : 'c-unk';
+      text = `${e.sender ? 'from <b>'+esc(e.sender)+'</b> · ' : ''}${esc(REASONS[e.reason] || e.reason)}${e.org_name ? ' · '+esc(e.org_name) : ''}`;
+    } else if (e.kind === 'apply') cls = 'c-warn'; else if (e.kind === 'issue') cls = 'c-ok';
+    return `<div class="ev"><span class="t">${t}</span><span><span class="tag ${cls}">${tag}</span> ${text}</span></div>`;
+  }).join('') || '<div class="empty">Waiting for traffic…</div>';
+}
+
+let busy = false;
+async function refresh() {
+  if (busy) return; busy = true;
+  try {
+    const [s, o, e, c] = await Promise.all([api('/api/admin/stats'), api('/api/admin/orgs'), api('/api/admin/events'), api('/api/admin/check')]);
+    $('engine').textContent = c.db === 'postgres' ? 'Supabase · Postgres' : 'Local SQLite';
+    tiles(s); chart(s.series); reasons(s.reasons); orgs(o); events(e);
+  } catch (e) { if (e.message !== 'locked') console.error(e); }
+  busy = false;
+}
+(async () => { // try without a key first (local dev from this machine), else show the gate
+  const r = await fetch('/api/admin/check', { headers: { 'x-admin-key': KEY } });
+  if (r.ok) { refresh(); } else showGate();
+  setInterval(refresh, 2000);
+})();
+</script>
+</body>
+</html>

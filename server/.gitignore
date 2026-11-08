@@ -1,0 +1,8 @@
+.env
+data/
+node_modules/
+
+.vercel
+.admin-key.txt
+.vercel
+

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 1 demo: the registry runs on a laptop on the LAN over plain HTTP.
+     Replace with HTTPS-only before any real deployment. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

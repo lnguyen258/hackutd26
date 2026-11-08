@@ -1,0 +1,17 @@
+# secrets / local state
+.env
+.env.*
+!.env.example
+.admin-key.txt
+.vercel
+data/
+*.log
+
+# builds / deps
+node_modules/
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+*.apk
