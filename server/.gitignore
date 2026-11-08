@@ -3,6 +3,6 @@ data/
 node_modules/
 
 .vercel
-.admin-key.txt
+.admin-key*
 .vercel
 

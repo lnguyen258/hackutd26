@@ -65,7 +65,7 @@ class Prefs(ctx: Context) {
 
     companion object {
         // Hosted registry on Vercel. Editable in the app.
-        const val DEFAULT_SERVER = "https://veritext-six.vercel.app"
+        const val DEFAULT_SERVER = "https://veritext-spacetime.vercel.app"
     }
 }
 

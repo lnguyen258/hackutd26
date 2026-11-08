@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb } from '../src/db.js';
+import { MemoryStore } from '../src/store.js';
 import * as svc from '../src/service.js';
 import { canonicalize, splitToken, bodyHash, normalizeAddress } from '../src/canon.js';
 
@@ -9,7 +9,7 @@ process.env.VERIFY_MODE = 'strict'; // existing tests cover the strict, code-bas
 const MSG = 'Your data usage exceeds monthly limit, add more credit to continue using service.';
 
 async function setup() {
-  const db = await openDb({ path: ':memory:' });
+  const db = new MemoryStore();
   const app = await await svc.applyForVerification(db, {
     name: 'T-Mobile',
     domain: 'https://www.t-mobile.com/about',

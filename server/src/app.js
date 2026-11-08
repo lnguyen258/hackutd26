@@ -2,15 +2,15 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { openDb } from './db.js';
+import { openStore } from './store.js';
 import * as svc from './service.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ON_VERCEL = !!process.env.VERCEL;
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 
-let dbPromise;
-export const getDb = () => (dbPromise ??= openDb().catch((e) => { dbPromise = undefined; throw e; }));
+let storePromise;
+export const getStore = () => (storePromise ??= openStore().catch((e) => { storePromise = undefined; throw e; }));
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const hits = new Map();
@@ -59,7 +59,7 @@ export async function handler(req, res) {
     }
     if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, time: Date.now() });
 
-    const db = await getDb();
+    const db = await getStore();
 
     if (req.method === 'POST' && path === '/api/orgs/apply') {
       if (rateLimited('apply:' + ip, 20)) throw new svc.HttpError(429, 'Too many requests');
@@ -84,7 +84,7 @@ export async function handler(req, res) {
 
     if (path.startsWith('/api/admin/')) {
       requireAdmin(req);
-      if (req.method === 'GET' && path === '/api/admin/check') return send(res, 200, { ok: true, db: db.kind });
+      if (req.method === 'GET' && path === '/api/admin/check') return send(res, 200, { ok: true, db: db.kind, dbName: db.name });
       if (req.method === 'GET' && path === '/api/admin/orgs') return send(res, 200, await svc.listOrgs(db));
       if (req.method === 'GET' && path === '/api/admin/events') return send(res, 200, await svc.listEvents(db));
       if (req.method === 'GET' && path === '/api/admin/stats') return send(res, 200, await svc.stats(db));

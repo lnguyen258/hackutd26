@@ -1,7 +1,7 @@
-// Core business logic. Async functions over a db adapter (see db.js) so they work on
-// Supabase Postgres and local SQLite alike.
+// Core business logic over a store (SpacetimeDB in production, in-memory in tests).
 import { randomBytes } from 'node:crypto';
 import { newTokenCode, splitToken, bodyHash, appendMarker, normalizeAddress } from './canon.js';
+import { StoreError } from './store.js';
 
 export const TOKEN_TTL_MS = Number(process.env.TOKEN_TTL_MIN || 60) * 60_000;
 
@@ -15,11 +15,18 @@ export class HttpError extends Error {
 
 const now = () => Date.now();
 
-async function logEvent(db, e) {
-  await db.run(
-    `INSERT INTO events (at, kind, decision, reason, org_name, sender, detail) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [now(), e.kind, e.decision ?? null, e.reason ?? null, e.org_name ?? null, e.sender ?? null, e.detail ?? null],
-  );
+/** Store rejections (e.g. the module refusing a duplicate name) become HTTP errors with the module's message. */
+async function guarded(fn) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof StoreError) throw new HttpError(e.status, e.message, e.status === 409 ? 'conflict' : 'store_error');
+    throw e;
+  }
+}
+
+async function logEvent(store, e) {
+  await store.logEvent({ at: now(), ...e });
 }
 
 export function publicOrg(o) {
@@ -31,7 +38,7 @@ export function publicOrg(o) {
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const DOMAIN = /^(?!-)([a-z0-9-]+\.)+[a-z]{2,}$/i;
 
-export async function applyForVerification(db, input) {
+export async function applyForVerification(store, input) {
   const name = String(input?.name ?? '').trim();
   const domain = String(input?.domain ?? '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   const contact = String(input?.contact ?? '').trim().slice(0, 200);
@@ -42,61 +49,40 @@ export async function applyForVerification(db, input) {
   if (!DOMAIN.test(domain)) throw new HttpError(400, 'A valid business domain is required (e.g. t-mobile.com)', 'bad_domain');
   if (senders.length < 1 || senders.length > 5) throw new HttpError(400, 'Provide 1-5 sender numbers', 'bad_senders');
 
-  // Anti-impersonation: an approved org already owns this name or number.
-  const dupName = await db.get(`SELECT id FROM orgs WHERE lower(name) = lower(?) AND status = 'approved'`, [name]);
-  if (dupName) throw new HttpError(409, `"${name}" is already a verified business`, 'name_taken');
-  for (const s of senders) {
-    const taken = await db.get(
-      `SELECT o.id FROM senders s JOIN orgs o ON o.id = s.org_id WHERE s.norm = ? AND o.status = 'approved'`,
-      [normalizeAddress(s)],
-    );
-    if (taken) throw new HttpError(409, `Sender ${s} already belongs to a verified business`, 'sender_taken');
-  }
-
   const apiKey = 'vt_' + randomBytes(18).toString('hex');
-  const row = await db.get(
-    `INSERT INTO orgs (name, domain, contact, brand_color, status, api_key, created_at) VALUES (?,?,?,?,?,?,?) RETURNING id`,
-    [name, domain, contact, color, 'pending', apiKey, now()],
+  // The SpacetimeDB module enforces anti-impersonation (name / number already owned by an approved business).
+  await guarded(() =>
+    store.insertOrg({ name, domain, contact, color, apiKey, addresses: senders, norms: senders.map(normalizeAddress), createdAt: now() }),
   );
-  const orgId = Number(row.id);
-  for (const s of senders) await db.run(`INSERT INTO senders (org_id, address, norm) VALUES (?,?,?)`, [orgId, s, normalizeAddress(s)]);
-  await logEvent(db, { kind: 'apply', org_name: name, detail: `applied for verification (${domain})` });
-  return { orgId, apiKey, status: 'pending' };
+  const org = await store.orgByKey(apiKey);
+  await logEvent(store, { kind: 'apply', org_name: name, detail: `applied for verification (${domain})` });
+  return { orgId: Number(org.id), apiKey, status: 'pending' };
 }
 
-export async function orgByKey(db, apiKey) {
+export async function orgByKey(store, apiKey) {
   if (!apiKey) throw new HttpError(401, 'Missing API key', 'no_key');
-  const org = await db.get(`SELECT * FROM orgs WHERE api_key = ?`, [apiKey]);
+  const org = await store.orgByKey(apiKey);
   if (!org) throw new HttpError(401, 'Unknown API key', 'bad_key');
   return org;
 }
 
-export async function orgStatus(db, org) {
-  const rows = await db.all(`SELECT address FROM senders WHERE org_id = ?`, [org.id]);
-  return { ...publicOrg(org), senders: rows.map((r) => r.address) };
+export async function orgStatus(store, org) {
+  return { ...publicOrg(org), senders: (await store.sendersOf(org.id)).map((s) => s.address) };
 }
 
-export async function decideOrg(db, id, action) {
-  const org = await db.get(`SELECT * FROM orgs WHERE id = ?`, [id]);
+export async function decideOrg(store, id, action) {
+  const org = await store.orgById(id);
   if (!org) throw new HttpError(404, 'No such business', 'not_found');
   const next = { approve: 'approved', reject: 'rejected', revoke: 'revoked' }[action];
   if (!next) throw new HttpError(400, 'Unknown action', 'bad_action');
-  if (next === 'approved') {
-    const conflict = await db.get(
-      `SELECT o.name FROM senders s JOIN orgs o ON o.id = s.org_id
-       WHERE o.status = 'approved' AND o.id != ? AND s.norm IN (SELECT norm FROM senders WHERE org_id = ?)`,
-      [id, id],
-    );
-    if (conflict) throw new HttpError(409, `A sender number already belongs to ${conflict.name}`, 'sender_taken');
-  }
-  await db.run(`UPDATE orgs SET status = ?, decided_at = ? WHERE id = ?`, [next, now(), id]);
-  await logEvent(db, { kind: 'admin', org_name: org.name, detail: `${action}: ${org.name}` });
+  await guarded(() => store.decide(Number(id), action, now()));
+  await logEvent(store, { kind: 'admin', org_name: org.name, detail: `${action}: ${org.name}` });
   return publicOrg({ ...org, status: next });
 }
 
 // ---------- token issuance (enterprise side) ----------
 
-export async function issueToken(db, org, text) {
+export async function issueToken(store, org, text) {
   if (org.status !== 'approved') {
     throw new HttpError(403, `Business is ${org.status}; only approved businesses can send verified messages`, 'not_approved');
   }
@@ -107,10 +93,8 @@ export async function issueToken(db, org, text) {
 
   const code = newTokenCode();
   const issued = now();
-  await db.run(`INSERT INTO tokens (code, org_id, body_hash, issued_at, expires_at) VALUES (?,?,?,?,?)`, [
-    code, org.id, bodyHash(clean), issued, issued + TOKEN_TTL_MS,
-  ]);
-  await logEvent(db, { kind: 'issue', org_name: org.name, detail: `token ${code} issued` });
+  await store.insertToken({ code, orgId: Number(org.id), bodyHash: bodyHash(clean), issuedAt: issued, expiresAt: issued + TOKEN_TTL_MS });
+  await logEvent(store, { kind: 'issue', org_name: org.name, detail: `token ${code} issued` });
   return { code, expiresAt: issued + TOKEN_TTL_MS, smsBody: appendMarker(clean, code) };
 }
 
@@ -123,27 +107,22 @@ export async function issueToken(db, org, text) {
  *   token present but sent from an unregistered number       -> suspicious
  *   no relation to the registry                              -> unknown
  */
-export async function verify(db, { from, body }, opts = {}) {
+export async function verify(store, { from, body }, opts = {}) {
   // 'sender' (default): a registered number alone is enough. 'strict': also needs a valid per-message code.
   const mode = opts.mode ?? process.env.VERIFY_MODE ?? 'sender';
   const addr = normalizeAddress(from);
   const { text, code } = splitToken(body);
 
-  const owner = addr
-    ? await db.get(
-        `SELECT o.* FROM senders s JOIN orgs o ON o.id = s.org_id
-         WHERE s.norm = ? AND o.status IN ('approved','revoked')
-         ORDER BY (o.status = 'approved') DESC LIMIT 1`,
-        [addr],
-      )
-    : null;
-
-  const token = code
-    ? await db.get(`SELECT t.*, o.name AS org_name FROM tokens t JOIN orgs o ON o.id = t.org_id WHERE t.code = ?`, [code])
-    : null;
+  const owner = addr ? await store.ownerOfNorm(addr) : null;
+  const token = code ? await store.tokenByCode(code) : null;
+  const tokenOrg = token ? await store.orgById(token.org_id) : null;
 
   const result = async (decision, reason, org) => {
-    await logEvent(db, { kind: 'verify', decision, reason, org_name: (org ?? owner)?.name ?? token?.org_name ?? null, sender: String(from ?? '') });
+    await logEvent(store, {
+      kind: 'verify', decision, reason,
+      org_name: (org ?? owner)?.name ?? tokenOrg?.name ?? '',
+      sender: String(from ?? ''),
+    });
     return { decision, reason, org: org ? publicOrg(org) : null };
   };
 
@@ -164,39 +143,29 @@ export async function verify(db, { from, body }, opts = {}) {
   return result('unknown', 'not_in_registry', null);
 }
 
-export async function directory(db) {
-  const rows = await db.all(
-    `SELECT s.norm, s.address, o.name, o.status FROM senders s JOIN orgs o ON o.id = s.org_id
-     WHERE o.status IN ('approved','revoked')`,
-  );
-  return { generatedAt: now(), senders: rows.map((r) => ({ norm: r.norm, name: r.name, status: r.status })) };
+export async function directory(store) {
+  return { generatedAt: now(), senders: await store.directoryRows() };
 }
 
-export async function resetAll(db) {
-  await db.exec(`DELETE FROM tokens; DELETE FROM senders; DELETE FROM orgs; DELETE FROM events;`);
-  await logEvent(db, { kind: 'admin', detail: 'demo data reset' });
+export async function resetAll(store) {
+  await store.resetAll();
+  await logEvent(store, { kind: 'admin', detail: 'demo data reset' });
 }
 
-export async function listOrgs(db) {
-  const orgs = await db.all(`SELECT * FROM orgs ORDER BY id DESC`);
-  const out = [];
-  for (const o of orgs) {
-    const senders = await db.all(`SELECT address FROM senders WHERE org_id = ?`, [o.id]);
-    out.push({
-      ...publicOrg(o),
-      contact: o.contact,
-      createdAt: o.created_at,
-      decidedAt: o.decided_at,
-      senders: senders.map((s) => s.address),
-    });
-  }
-  return out;
+export async function listOrgs(store) {
+  return (await store.listOrgs()).map((o) => ({
+    ...publicOrg(o),
+    contact: o.contact,
+    createdAt: o.created_at,
+    decidedAt: o.decided_at || null,
+    senders: o.senders,
+  }));
 }
 
-/** Aggregates for the dashboard, computed in JS so it is engine-agnostic. */
-export async function stats(db) {
+/** Aggregates for the dashboard. */
+export async function stats(store) {
   const since = now() - 24 * 3600_000;
-  const rows = await db.all(`SELECT at, kind, decision, reason, org_name FROM events WHERE at >= ? ORDER BY at DESC LIMIT 5000`, [since]);
+  const rows = await store.eventsSince(since, 5000);
   const totals = { verified: 0, suspicious: 0, unknown: 0, issued: 0 };
   const reasons = {};
   const byOrg = {};
@@ -215,17 +184,11 @@ export async function stats(db) {
     const b = series[Math.floor((r.at - (end - (N - 1) * BUCKET)) / BUCKET)];
     if (b) b[r.decision]++;
   }
-  const orgCounts = await db.all(`SELECT status, COUNT(*) AS n FROM orgs GROUP BY status`);
-  return {
-    totals,
-    reasons,
-    byOrg,
-    series,
-    orgs: Object.fromEntries(orgCounts.map((r) => [r.status, Number(r.n)])),
-    engine: db.kind,
-  };
+  return { totals, reasons, byOrg, series, orgs: await store.statusCounts(), engine: store.kind };
 }
 
-export async function listEvents(db, limit = 60) {
-  return db.all(`SELECT * FROM events ORDER BY id DESC LIMIT ?`, [limit]);
+/** Recent activity (last 24h), newest first. Empty strings from the database become null. */
+export async function listEvents(store, limit = 60) {
+  const rows = await store.eventsSince(now() - 24 * 3600_000, limit);
+  return rows.map((r) => ({ ...r, decision: r.decision || null, reason: r.reason || null, org_name: r.org_name || null, sender: r.sender || null, detail: r.detail || null }));
 }

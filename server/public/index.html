@@ -217,7 +217,7 @@ async function refresh() {
   if (busy) return; busy = true;
   try {
     const [s, o, e, c] = await Promise.all([api('/api/admin/stats'), api('/api/admin/orgs'), api('/api/admin/events'), api('/api/admin/check')]);
-    $('engine').textContent = c.db === 'postgres' ? 'Supabase · Postgres' : 'Local SQLite';
+    $('engine').textContent = c.db === 'spacetimedb' ? 'SpacetimeDB · ' + (c.dbName || '') : 'In-memory (offline dev)';
     tiles(s); chart(s.series); reasons(s.reasons); orgs(o); events(e);
   } catch (e) { if (e.message !== 'locked') console.error(e); }
   busy = false;

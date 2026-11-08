@@ -1,6 +1,7 @@
 # CONTEXT — VeriText: how this project happened
 
 > Purpose: a factual record of the whole build, written so `DEVPOST.md` can be drafted from it without re-asking anyone. Everything here reflects what was actually built and observed up to **2026-11-08**. Section 12 lists what **not** to claim.
+> **Branch note:** this file was written on `luong` (Supabase). On branch **`luong-2`** the whole database layer is **SpacetimeDB**; see §16. Mentions of Supabase/Postgres below describe `main`/`luong`.
 > Companion docs: [INSPO.md](INSPO.md) (problem dissection), [PLAN.md](PLAN.md) (Phase 1 plan, partly superseded, see §9), [TECHNIQUE.md](TECHNIQUE.md) (authentication design and sources).
 
 ---
@@ -173,3 +174,25 @@ Repo: `github.com/lnguyen258/hackutd26`, working branch **`luong`**.
 4. Decide the real-world path: signed seals + aggregator integration + a carrier conversation ([TECHNIQUE.md](TECHNIQUE.md) §9).
 5. Replace the manual **Approve** button with real business vetting.
 6. Build the **iOS Message Filter extension** (needs a Mac).
+
+## 16. SpacetimeDB migration (branch `luong-2`)
+
+**Why:** to enter the SpacetimeDB track and show GitHub judges real use of it. The Supabase version on `luong`/`main` is intentionally left running as the stable demo.
+
+**What changed**
+- New module `spacetimedb/` (TypeScript, SDK 2.14): private tables `org`, `sender`, `token`, `event`, `config`; reducers `apply_org`, `decide_org`, `insert_token`, `log_event`, `reset_all`; every reducer admin-gated to the publishing identity. Published to Maincloud as **`veritext-registry`**.
+- Server data layer replaced: `server/src/db.js` (SQLite/Postgres) removed; `server/src/store.js` adds `SpacetimeStore` (reducer calls + SQL over HTTP) and an in-memory `MemoryStore` for tests. `service.js` now calls the store; the rules are unchanged. The `pg` dependency is gone (the server has zero dependencies).
+- Anti-impersonation moved *into the database* (reducers), so it holds even if a client misbehaves.
+- Dashboard label shows "SpacetimeDB · veritext-registry".
+- `scripts/smoke-spacetime.js`: end-to-end integration test against the live database (apply, approve, impersonation rejected, genuine / tampered / replay / spoof, directory, stats, revoke).
+
+**Verified (2026-11-08)**
+- Anonymous reducer call → `admin only`; anonymous SQL on a table → denied; owner calls and SQL work.
+- 14 unit tests pass on `MemoryStore`; the SpacetimeDB integration script passes against the live database.
+- Live API on its own Vercel project responds correctly: apply → approve → verify → directory → stats.
+
+**Deployment (kept separate on purpose)**
+- Supabase demo: Vercel project `veritext` → `https://veritext-six.vercel.app` (**unchanged**).
+- SpacetimeDB version: Vercel project `veritext-spacetime` → `https://veritext-spacetime.vercel.app`, own admin key, deployed with `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` overrides so `server/.vercel` still points at the old project.
+
+**Not done:** the Android app on the phones still talks to the Supabase deployment (only this branch's default URL was changed, no install); dashboard still polls instead of using SpacetimeDB subscriptions.

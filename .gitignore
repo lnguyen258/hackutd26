@@ -2,7 +2,7 @@
 .env
 .env.*
 !.env.example
-.admin-key.txt
+.admin-key*
 .vercel
 data/
 *.log
